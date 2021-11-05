@@ -31,12 +31,10 @@ import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-
 import androidx.core.view.GestureDetectorCompat;
 import androidx.core.view.ViewCompat;
 import androidx.customview.widget.ViewDragHelper;
@@ -118,15 +116,11 @@ public class SwipeRevealLayout extends ViewGroup {
 
     private int mDragEdge = DRAG_EDGE_LEFT;
 
-    private float mDragDist = 0;
-    private float mPrevX = -1;
-    private float mPrevY = -1;
-
     private ViewDragHelper mDragHelper;
     private GestureDetectorCompat mGestureDetector;
 
-    private DragStateChangeListener mDragStateChangeListener; // only used for ViewBindHelper
-    private SwipeListener mSwipeListener;
+    private SwipeRevealLayout.DragStateChangeListener mDragStateChangeListener; // only used for ViewBindHelper
+    private SwipeRevealLayout.SwipeListener mSwipeListener;
 
     private int mOnLayoutCount = 0;
 
@@ -156,10 +150,10 @@ public class SwipeRevealLayout extends ViewGroup {
     }
 
     /**
-     * No-op stub for {@link SwipeListener}. If you only want ot implement a subset
+     * No-op stub for {@link SwipeRevealLayout.SwipeListener}. If you only want ot implement a subset
      * of the listener methods, you can extend this instead of implement the full interface.
      */
-    public static class SimpleSwipeListener implements SwipeListener {
+    public static class SimpleSwipeListener implements SwipeRevealLayout.SwipeListener {
         @Override
         public void onClosed(SwipeRevealLayout view) {}
 
@@ -193,25 +187,14 @@ public class SwipeRevealLayout extends ViewGroup {
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        if (isDragLocked()) {
-            return super.onInterceptTouchEvent(ev);
-        }
-
         mDragHelper.processTouchEvent(ev);
         mGestureDetector.onTouchEvent(ev);
-        accumulateDragDist(ev);
 
-        boolean couldBecomeClick = couldBecomeClick(ev);
         boolean settling = mDragHelper.getViewDragState() == ViewDragHelper.STATE_SETTLING;
         boolean idleAfterScrolled = mDragHelper.getViewDragState() == ViewDragHelper.STATE_IDLE
                 && mIsScrolling;
 
-        // must be placed as the last statement
-        mPrevX = ev.getX();
-        mPrevY = ev.getY();
-
-        // return true => intercept, cannot trigger onClick event
-        return !couldBecomeClick && (settling || idleAfterScrolled);
+        return settling || idleAfterScrolled;
     }
 
     @Override
@@ -251,7 +234,7 @@ public class SwipeRevealLayout extends ViewGroup {
             int measuredChildWidth = child.getMeasuredWidth();
 
             // need to take account if child size is match_parent
-            final LayoutParams childParams = child.getLayoutParams();
+            final ViewGroup.LayoutParams childParams = child.getLayoutParams();
             boolean matchParentHeight = false;
 
             if (childParams != null) {
@@ -345,22 +328,11 @@ public class SwipeRevealLayout extends ViewGroup {
         final int widthMode = MeasureSpec.getMode(widthMeasureSpec);
         final int heightMode = MeasureSpec.getMode(heightMeasureSpec);
 
-        int desiredWidth = 0;
-        int desiredHeight = 0;
-
-        // first find the largest child
-        for (int i = 0; i < getChildCount(); i++) {
-            final View child = getChildAt(i);
-            measureChild(child, widthMeasureSpec, heightMeasureSpec);
-            desiredWidth = Math.max(child.getMeasuredWidth(), desiredWidth);
-            desiredHeight = Math.max(child.getMeasuredHeight(), desiredHeight);
-        }
-        // create new measure spec using the largest child width
-        widthMeasureSpec = MeasureSpec.makeMeasureSpec(desiredWidth, widthMode);
-        heightMeasureSpec = MeasureSpec.makeMeasureSpec(desiredHeight, heightMode);
-
         final int measuredWidth = MeasureSpec.getSize(widthMeasureSpec);
         final int measuredHeight = MeasureSpec.getSize(heightMeasureSpec);
+
+        int desiredWidth = 0;
+        int desiredHeight = 0;
 
         for (int i = 0; i < getChildCount(); i++) {
             final View child = getChildAt(i);
@@ -423,7 +395,7 @@ public class SwipeRevealLayout extends ViewGroup {
 
     /**
      * Open the panel to show the secondary view
-     * @param animation true to animate the open motion. {@link SwipeListener} won't be
+     * @param animation true to animate the open motion. {@link SwipeRevealLayout.SwipeListener} won't be
      *                  called if is animation is false.
      */
     public void open(boolean animation) {
@@ -461,7 +433,7 @@ public class SwipeRevealLayout extends ViewGroup {
 
     /**
      * Close the panel to hide the secondary view
-     * @param animation true to animate the close motion. {@link SwipeListener} won't be
+     * @param animation true to animate the close motion. {@link SwipeRevealLayout.SwipeListener} won't be
      *                  called if is animation is false.
      */
     public void close(boolean animation) {
@@ -542,7 +514,7 @@ public class SwipeRevealLayout extends ViewGroup {
         return mDragEdge;
     }
 
-    public void setSwipeListener(SwipeListener listener) {
+    public void setSwipeListener(SwipeRevealLayout.SwipeListener listener) {
         mSwipeListener = listener;
     }
 
@@ -575,7 +547,7 @@ public class SwipeRevealLayout extends ViewGroup {
     }
 
     /** Only used for {@link ViewBinderHelper} */
-    void setDragStateChangeListener(DragStateChangeListener listener) {
+    void setDragStateChangeListener(SwipeRevealLayout.DragStateChangeListener listener) {
         mDragStateChangeListener = listener;
     }
 
@@ -689,45 +661,6 @@ public class SwipeRevealLayout extends ViewGroup {
                 getSecOpenLeft() + mSecondaryView.getWidth(),
                 getSecOpenTop() + mSecondaryView.getHeight()
         );
-    }
-
-    private boolean couldBecomeClick(MotionEvent ev) {
-        return isInMainView(ev) && !shouldInitiateADrag();
-    }
-
-    private boolean isInMainView(MotionEvent ev) {
-        float x = ev.getX();
-        float y = ev.getY();
-
-        boolean withinVertical = mMainView.getTop() <= y && y <= mMainView.getBottom();
-        boolean withinHorizontal = mMainView.getLeft() <= x && x <= mMainView.getRight();
-
-        return withinVertical && withinHorizontal;
-    }
-
-    private boolean shouldInitiateADrag() {
-        float minDistToInitiateDrag = mDragHelper.getTouchSlop();
-        return mDragDist >= minDistToInitiateDrag;
-    }
-
-    private void accumulateDragDist(MotionEvent ev) {
-        final int action = ev.getAction();
-        if (action == MotionEvent.ACTION_DOWN) {
-            mDragDist = 0;
-            return;
-        }
-
-        boolean dragHorizontally = getDragEdge() == DRAG_EDGE_LEFT ||
-                getDragEdge() == DRAG_EDGE_RIGHT;
-
-        float dragged;
-        if (dragHorizontally) {
-            dragged = Math.abs(ev.getX() - mPrevX);
-        } else {
-            dragged = Math.abs(ev.getY() - mPrevY);
-        }
-
-        mDragDist += dragged;
     }
 
     private void init(Context context, AttributeSet attrs) {
