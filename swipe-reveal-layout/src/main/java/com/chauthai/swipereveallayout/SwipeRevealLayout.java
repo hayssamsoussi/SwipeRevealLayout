@@ -252,23 +252,15 @@ public class SwipeRevealLayout extends ViewGroup {
             // need to take account if child size is match_parent
             final LayoutParams childParams = child.getLayoutParams();
             boolean matchParentHeight = false;
-            boolean matchParentWidth = false;
 
             if (childParams != null) {
                 matchParentHeight = (childParams.height == LayoutParams.MATCH_PARENT) ||
                         (childParams.height == LayoutParams.FILL_PARENT);
-                matchParentWidth = (childParams.width == LayoutParams.MATCH_PARENT) ||
-                        (childParams.width == LayoutParams.FILL_PARENT);
             }
 
             if (matchParentHeight) {
                 measuredChildHeight = maxBottom - minTop;
                 childParams.height = measuredChildHeight;
-            }
-
-            if (matchParentWidth) {
-                measuredChildWidth = maxRight - minLeft;
-                childParams.width = measuredChildWidth;
             }
 
             switch (mDragEdge) {
